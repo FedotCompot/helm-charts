@@ -151,6 +151,17 @@ datastore:
     passwordKey: password
 ```
 
+### Database Migrations
+
+When `datastore.engine` is `postgres` or `mysql` and `datastore.applyMigrations` is `true` (the default), the chart applies the OpenFGA database schema before the server starts. `datastore.migrationType` selects how:
+
+- **`job`** (default) — migrations run in a dedicated Kubernetes Job. When `datastore.waitForMigrations` is `true`, the Deployment also gets a `wait-for-migration` init container that gates the server on the Job's completion. The Helm hooks that control when the Job runs are selected automatically from your datastore configuration:
+  - **Externally provided datastore** — when an external connection secret is referenced (`datastore.uriSecret` or `datastore.existingSecret`) and the bundled `postgresql`/`mysql` subcharts are disabled, the Job runs as a `pre-install`/`pre-upgrade` hook so migrations complete *before* the Deployment is created. The chart also promotes the ServiceAccount (`serviceAccount.create=true`) to the same hook events at an earlier weight so the Job's pod can be scheduled. This avoids the deadlock and uninstall stall described below. Because pre-* hooks run before the release's own resources, this path expects the database to be reachable independently of the release (a managed or externally-deployed database); the credentials must come from the external secret, since a chart-generated Secret would not exist yet.
+  - **Otherwise (legacy default)** — the Job keeps the historical `post-install`/`post-upgrade`/`post-rollback`/`post-delete` hooks for backward compatibility. Note that this path deadlocks installs that wait for readiness (`--wait`, `--atomic`, Argo CD, Flux) — the Deployment blocks on a Job that Helm only creates after the wait — and `post-delete` makes the Job run during `helm uninstall` and stall it until timeout. Prefer an external datastore, or use `initContainer` (below), to avoid this.
+- **`initContainer`** — migrations run as an init container inside the OpenFGA pod. Use this when the database is deployed **as part of the same release** (a subchart or an `extraObjects` instance, including the dev/test examples above), because the init container starts alongside the database and retries until it is reachable.
+
+You can override the selected hooks by setting `migrate.annotations` (merged with the chart's choice).
+
 ## Uninstalling the Chart
 
 To uninstall/delete the `openfga` deployment:
