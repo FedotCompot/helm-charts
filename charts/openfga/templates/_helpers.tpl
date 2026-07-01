@@ -87,6 +87,22 @@ Return true if a secret object should be created
 {{ include "openfga.fullname" . }}-datastore-secret
 {{- end -}}
 
+{{/*
+Whether the migration Job should run as a pre-install/pre-upgrade hook.
+
+Pre-* hooks only work for an externally provided datastore: an external connection secret is
+referenced (datastore.uriSecret / datastore.existingSecret) and the bundled postgresql/mysql
+subcharts are disabled. In that case the Job runs before the release's own resources without
+depending on any in-release database or chart-managed Secret. For every other configuration the
+legacy post-install/post-upgrade/post-rollback/post-delete hooks are kept for backward
+compatibility.
+*/}}
+{{- define "openfga.migrate.usePreInstallHooks" -}}
+{{- if and (has .Values.datastore.engine (list "postgres" "mysql")) .Values.datastore.applyMigrations (eq .Values.datastore.migrationType "job") (or .Values.datastore.uriSecret .Values.datastore.existingSecret) (not .Values.postgresql.enabled) (not .Values.mysql.enabled) -}}
+true
+{{- end -}}
+{{- end -}}
+
 {{- define "openfga.datastore.secondary.secretName" -}}
 {{ include "openfga.fullname" . }}-secondary-datastore-secret
 {{- end -}}

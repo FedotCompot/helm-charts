@@ -19,7 +19,10 @@ commonLabels: {}
 serviceAccount:
   # Specifies whether a service account should be created
   create: true
-  # Annotations to add to the service account
+  # Annotations to add to the service account.
+  # Note: with an externally provided datastore and datastore.migrationType=job the chart also adds
+  # pre-install/pre-upgrade hook annotations here (weight -10) so the ServiceAccount exists before
+  # the migration Job's hook runs. Any annotations set here are merged in.
   annotations: {}
   # The name of the service account to use.
   # If not set and create is true, a name is generated using the fullname template
@@ -372,8 +375,21 @@ migrate:
   extraVolumeMounts: []
   extraInitContainers: []
   sidecars: []
+  # Annotations for the migration Job (datastore.migrationType=job). These default to the legacy
+  # post-install/post-upgrade/post-rollback/post-delete hooks for backward compatibility.
+  #
+  # When the datastore is externally provided — an external connection secret is referenced
+  # (datastore.uriSecret or datastore.existingSecret) and the bundled postgresql/mysql subcharts
+  # are disabled — the chart instead runs the Job as a pre-install/pre-upgrade hook (and promotes
+  # the ServiceAccount to match). This is required because the OpenFGA Deployment's
+  # wait-for-migration init container blocks on the Job: with post-* hooks a `--wait`/`--atomic`/
+  # GitOps install deadlocks (the Deployment cannot become ready while it waits for a Job that Helm
+  # only creates afterwards) and `post-delete` makes the Job run and block `helm uninstall`.
+  # For an in-release database (bundled subchart or extraObjects) use
+  # datastore.migrationType=initContainer instead. Annotations set here are merged with the
+  # selected hook annotations.
   annotations:
-    helm.sh/hook: "post-install, post-upgrade, post-rollback, post-delete"
+    helm.sh/hook: "post-install,post-upgrade,post-rollback,post-delete"
     helm.sh/hook-weight: "-5"
     helm.sh/hook-delete-policy: "before-hook-creation"
   labels: {}
